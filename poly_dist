@@ -1,0 +1,31 @@
+import polars as pl
+import numpy as np
+import time
+from pg import match_nearest_point
+
+# effects polars impl more
+num_points = 500
+# effects naive impl more
+group_count = 100
+
+print(f'df')
+df = pl.DataFrame(
+    {
+        "group_id": [i for i in range(group_count)],
+        "data": [[list(np.random.rand(2)) for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)], 
+    }
+)
+
+print(f'join')
+poly_on_poly = df.join(df, how='cross')
+
+print(f'op')
+t0 = time.perf_counter()
+poly_on_poly = poly_on_poly.with_columns([
+    match_nearest_point(pl.col("data"), pl.col("data_right")).alias("nearest_indices_left"),
+    match_nearest_point(pl.col("data_right"), pl.col("data")).alias("nearest_indices_right")
+])
+t1 = time.perf_counter()
+print(t1 - t0)
+
+# print(poly_on_poly)

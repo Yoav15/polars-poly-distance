@@ -21,4 +21,12 @@ def frechet_distance_expr(expr: IntoExprColumn, other: IntoExprColumn) -> pl.Exp
         function_name="frechet_distance_expr",
         is_elementwise=True,
     )
+    
+def match_nearest_point(expr: IntoExprColumn, weights: IntoExprColumn) -> pl.Expr:
+    return register_plugin_function(
+        args=[expr, weights],
+        plugin_path=LIB,
+        function_name="match_nearest_point",
+        is_elementwise=True,
+    )
 
