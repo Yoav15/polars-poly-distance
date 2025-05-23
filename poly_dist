@@ -12,7 +12,10 @@ print(f'df')
 df = pl.DataFrame(
     {
         "group_id": [i for i in range(group_count)],
-        "data": [[list(np.random.rand(2)) for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)], 
+        "x1": [[np.random.rand() for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)],
+        "y1": [[np.random.rand() for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)],
+        "x2": [[np.random.rand() for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)],
+        "y2": [[np.random.rand() for _ in range(num_points + np.random.randint(-2, 2, 1)[0])] for _ in range(group_count)],
     }
 )
 
@@ -22,8 +25,18 @@ poly_on_poly = df.join(df, how='cross')
 print(f'op')
 t0 = time.perf_counter()
 poly_on_poly = poly_on_poly.with_columns([
-    match_nearest_point(pl.col("data"), pl.col("data_right")).alias("nearest_indices_left"),
-    match_nearest_point(pl.col("data_right"), pl.col("data")).alias("nearest_indices_right")
+    match_nearest_point(
+        pl.col("x1"), 
+        pl.col("y1"), 
+        pl.col("x2_right"), 
+        pl.col("y2_right")
+    ).alias("nearest_indices_left"),
+    match_nearest_point(
+        pl.col("x2_right"), 
+        pl.col("y2_right"), 
+        pl.col("x1"), 
+        pl.col("y1")
+    ).alias("nearest_indices_right")
 ])
 t1 = time.perf_counter()
 print(t1 - t0)
