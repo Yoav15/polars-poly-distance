@@ -70,6 +70,7 @@ sizes = [
     (100, 50, 160),
     (100, 50, 320),
     (100, 50, 640),
+    # (3600, 100, 500),
 ]
 
 results = []
@@ -85,6 +86,8 @@ for r in results:
     print(f"{r['num_tracks']:6d} | {r['points_per_track']:6d} | {r['max_time']:12d} | {r['overlap_time']:10.3f} | {r['distance_time']:10.3f} | {r['total_time']:8.3f} | {r['num_overlaps']:8d}") 
     
 """
+regular build:
+
 Performance Summary:
 Tracks | Points/Track | MaxStartTime | Overlap (s) | Distance (s) | Total (s) | Overlaps
 --------------------------------------------------------------------------------
@@ -105,4 +108,26 @@ Tracks | Points/Track | MaxStartTime | Overlap (s) | Distance (s) | Total (s) | 
    100 |     50 |          640 |      0.002 |      0.004 |    0.006 |      719
    
    number of tracks has the most effect
+   
+   
+release build - honestly the boost is insane... it still scales polynomialy with track count though
+
+Performance Summary:
+Tracks | Points/Track | MaxStartTime | Overlap (s) | Distance (s) | Total (s) | Overlaps
+--------------------------------------------------------------------------------
+   100 |     50 |           20 |      0.019 |      0.008 |    0.027 |     4950
+   100 |    100 |           20 |      0.003 |      0.003 |    0.006 |     4950
+   100 |    200 |           20 |      0.002 |      0.004 |    0.006 |     4950
+   100 |    400 |           20 |      0.002 |      0.010 |    0.012 |     4950
+   100 |    800 |           20 |      0.002 |      0.025 |    0.027 |     4950
+   100 |   1600 |           20 |      0.003 |      0.051 |    0.054 |     4950
+   100 |     50 |           20 |      0.002 |      0.002 |    0.004 |     4950
+   200 |     50 |           20 |      0.002 |      0.004 |    0.007 |    19900
+   400 |     50 |           20 |      0.007 |      0.015 |    0.022 |    79800
+   800 |     50 |           20 |      0.020 |      0.059 |    0.079 |   319600
+   100 |     50 |           40 |      0.002 |      0.002 |    0.004 |     4950
+   100 |     50 |           80 |      0.003 |      0.002 |    0.004 |     3736
+   100 |     50 |          160 |      0.002 |      0.002 |    0.004 |     2523
+   100 |     50 |          320 |      0.002 |      0.001 |    0.003 |     1360
+   100 |     50 |          640 |      0.002 |      0.001 |    0.003 |      708
 """
