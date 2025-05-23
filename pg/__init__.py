@@ -22,9 +22,18 @@ def frechet_distance_expr(expr: IntoExprColumn, other: IntoExprColumn) -> pl.Exp
         is_elementwise=True,
     )
     
-def match_nearest_point(expr: IntoExprColumn, weights: IntoExprColumn) -> pl.Expr:
+def match_nearest_point(
+    x1: IntoExprColumn, 
+    y1: IntoExprColumn, 
+    t1: IntoExprColumn,
+    x2: IntoExprColumn, 
+    y2: IntoExprColumn,
+    t2: IntoExprColumn,
+    overlap_start: IntoExprColumn,
+    overlap_end: IntoExprColumn
+) -> pl.Expr:
     return register_plugin_function(
-        args=[expr, weights],
+        args=[x1, y1, t1, x2, y2, t2, overlap_start, overlap_end],
         plugin_path=LIB,
         function_name="match_nearest_point",
         is_elementwise=True,

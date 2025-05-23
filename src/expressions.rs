@@ -9,106 +9,140 @@ use polars::error::PolarsError;
 use polars::datatypes::DataType;
 use polars::prelude::PolarsResult;
 use polars::prelude::CompatLevel;
-use polars::chunked_array::ops::ChunkAgg;
 use ndarray::{Array2};
-use flame;
+use rayon::prelude::*;
+use std::sync::Mutex;
+// use flame;
 
 #[polars_expr(output_type = Float64)]
 fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
-    let _guard = flame::start_guard("match_nearest_point");
-    let lhs = &inputs[0]; // a: List[List[f64]]
-    let rhs = &inputs[1]; // b: List[List[f64]]
+    let x1 = &inputs[0];
+    let y1 = &inputs[1];
+    let t1 = &inputs[2];
+    let x2 = &inputs[3];
+    let y2 = &inputs[4];
+    let t2 = &inputs[5];
+    let overlap_start = &inputs[6];
+    let overlap_end = &inputs[7];
 
-    let mut result_rows = Vec::with_capacity(lhs.len());
+    let result_rows = Mutex::new(Vec::with_capacity(x1.len()));
 
-    for row in 0..lhs.len() {
-        // let _guard = flame::start_guard("process_row");
-        let a_val: AnyValue<'_> = lhs.get(row)?;
-        let b_val = rhs.get(row)?;
-
-        let a_series = match a_val {
-            AnyValue::List(s) => s,
-            _ => return Err(PolarsError::ComputeError("Expected list of points in column A".into())),
+    // Process rows in parallel
+    (0..x1.len()).into_par_iter().for_each(|row| {
+        let x1_val = x1.get(row).unwrap();
+        let y1_val = y1.get(row).unwrap();
+        let t1_val = t1.get(row).unwrap();
+        let x2_val = x2.get(row).unwrap();
+        let y2_val = y2.get(row).unwrap();
+        let t2_val = t2.get(row).unwrap();
+        let start = match overlap_start.get(row).unwrap() {
+            AnyValue::Float64(v) => v,
+            _ => return,
+        };
+        let end = match overlap_end.get(row).unwrap() {
+            AnyValue::Float64(v) => v,
+            _ => return,
         };
 
-        let b_series = match b_val {
+        // Extract and convert lists
+        let x1_series = match x1_val {
             AnyValue::List(s) => s,
-            _ => return Err(PolarsError::ComputeError("Expected list of points in column B".into())),
+            _ => return,
+        };
+        let y1_series = match y1_val {
+            AnyValue::List(s) => s,
+            _ => return,
+        };
+        let t1_series = match t1_val {
+            AnyValue::List(s) => s,
+            _ => return,
+        };
+        let x2_series = match x2_val {
+            AnyValue::List(s) => s,
+            _ => return,
+        };
+        let y2_series = match y2_val {
+            AnyValue::List(s) => s,
+            _ => return,
+        };
+        let t2_series = match t2_val {
+            AnyValue::List(s) => s,
+            _ => return,
         };
 
-        let points_a = convert_point_list(&a_series)?;
-        let points_b = convert_point_list(&b_series)?;
+        // Convert to f64 series
+        let x1_f64 = x1_series.cast(&DataType::Float64).unwrap();
+        let y1_f64 = y1_series.cast(&DataType::Float64).unwrap();
+        let t1_f64 = t1_series.cast(&DataType::Float64).unwrap();
+        let x2_f64 = x2_series.cast(&DataType::Float64).unwrap();
+        let y2_f64 = y2_series.cast(&DataType::Float64).unwrap();
+        let t2_f64 = t2_series.cast(&DataType::Float64).unwrap();
 
-        // Convert to Polars Series for vectorized operations
-        let x_a = Series::new(PlSmallStr::from_str("y_a"), points_a.column(0).to_vec());
-        let y_a = Series::new(PlSmallStr::from_str("y_a"), points_a.column(1).to_vec());
-        let x_b = Series::new(PlSmallStr::from_str("x_b"), points_b.column(0).to_vec());
-        let y_b = Series::new(PlSmallStr::from_str("y_b"), points_b.column(1).to_vec());
+        // Get points as vectors
+        let x1_points = x1_f64.f64().unwrap();
+        let y1_points = y1_f64.f64().unwrap();
+        let t1_points = t1_f64.f64().unwrap();
+        let x2_points = x2_f64.f64().unwrap();
+        let y2_points = y2_f64.f64().unwrap();
+        let t2_points = t2_f64.f64().unwrap();
+
+        // Pre-filter points in overlap region for both tracks
+        let mut valid_indices_1 = Vec::with_capacity(t1_points.len());
+        let mut valid_indices_2 = Vec::with_capacity(t2_points.len());
+        
+        for i in 0..t1_points.len() {
+            let t = t1_points.get(i).unwrap();
+            if t >= start && t <= end {
+                valid_indices_1.push(i);
+            }
+        }
+        
+        for i in 0..t2_points.len() {
+            let t = t2_points.get(i).unwrap();
+            if t >= start && t <= end {
+                valid_indices_2.push(i);
+            }
+        }
 
         // Calculate distances using vectorized operations
-        let mut min_distances = Vec::with_capacity(points_a.nrows());
-        
-        for i in 0..points_a.nrows() {
-            // let _guard = flame::start_guard("process_point");
-            let x_a_val = x_a.get(i).unwrap().extract::<f64>().unwrap();
-            let y_a_val = y_a.get(i).unwrap().extract::<f64>().unwrap();
+        let mut total_distance = 0.0;
+        let mut count = 0;
+
+        for &i in &valid_indices_1 {
+            let t1_val = t1_points.get(i).unwrap();
+            let x1_val = x1_points.get(i).unwrap();
+            let y1_val = y1_points.get(i).unwrap();
+
+            // Find closest time point in track 2
+            let mut min_time_diff = f64::MAX;
+            let mut closest_j = 0;
             
-            let x_diff = &x_b - x_a_val;
-            let y_diff = &y_b - y_a_val;
-            
-            // Vectorized distance calculation
-            let x_squared = x_diff.f64()? * x_diff.f64()?;
-            let y_squared = y_diff.f64()? * y_diff.f64()?;
-            // TODO: use actual L2 distance
-            let distances = x_squared + y_squared;
-            
-            // Get minimum distance
-            let min_dist = distances.min().unwrap();
-            min_distances.push(min_dist);
-        }
-
-        // Sum all minimum distances
-        let total: f64 = min_distances.iter().sum();
-        result_rows.push(total);
-    }
-
-    // Write the flamegraph to a file
-    flame::dump_html(std::fs::File::create("flamegraph.html").unwrap()).unwrap();
-
-    Ok(Series::new(PlSmallStr::from_str("result"), &result_rows))
-}
-
-fn convert_point_list(series: &Series) -> PolarsResult<Array2<f64>> {
-    let mut points = Vec::with_capacity(series.len());
-
-    for i in 0..series.len() {
-        let val = series.get(i)?;
-
-        let coord_series = match val {
-            AnyValue::List(s) => s,
-            _ => {
-                return Err(PolarsError::ComputeError(
-                    "Expected a point to be a list of floats".into(),
-                ))
+            for &j in &valid_indices_2 {
+                let t2_val = t2_points.get(j).unwrap();
+                let time_diff = (t1_val - t2_val).abs();
+                if time_diff < min_time_diff {
+                    min_time_diff = time_diff;
+                    closest_j = j;
+                }
             }
-        };
 
-        let coord_series_f64 = coord_series.cast(&DataType::Float64)?;
-        let coords = coord_series_f64.f64()?;
-
-        if coords.len() != 2 {
-            return Err(PolarsError::ComputeError(
-                "Each point must contain exactly 2 coordinates".into(),
-            ));
+            if min_time_diff != f64::MAX {
+                let x2_val = x2_points.get(closest_j).unwrap();
+                let y2_val = y2_points.get(closest_j).unwrap();
+                
+                // Use SIMD-friendly distance calculation
+                let dx = x1_val - x2_val;
+                let dy = y1_val - y2_val;
+                total_distance += (dx * dx + dy * dy).sqrt();
+                count += 1;
+            }
         }
 
-        let x = coords.get(0).unwrap();
-        let y = coords.get(1).unwrap();
-        points.push([x, y]);
-    }
+        let avg_distance = if count > 0 { total_distance / count as f64 } else { 0.0 };
+        result_rows.lock().unwrap().push(avg_distance);
+    });
 
-    Array2::from_shape_vec((points.len(), 2), points.iter().flat_map(|p| *p).collect())
-        .map_err(|e| PolarsError::ComputeError(format!("Failed to build ndarray: {e}").into()))
+    Ok(Series::new(PlSmallStr::from_str("result"), result_rows.into_inner().unwrap()))
 }
 
 // fn euclidean(a: &ArrayView1<f64>, b: &ArrayView1<f64>) -> f64 {

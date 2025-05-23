@@ -1,13 +1,14 @@
 import polars as pl
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float = 20.0):
     """
     Generate a dataset of linear tracks with random noise.
     Each track has sequential timestamps and follows a linear pattern (y = mx + b)
     with random slope and intercept for each track.
-    Tracks can overlap in time but have unique track IDs.
     
     Args:
         num_tracks: Number of unique tracks to generate
@@ -38,8 +39,12 @@ def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float
     slopes = np.random.uniform(-2, 2, num_tracks)
     intercepts = np.random.uniform(-5, 5, num_tracks)
     
-    # Calculate x coordinates (using timestamps as x) with some noise
-    x = timestamps + np.random.normal(0, 0.2, len(timestamps))
+    # Generate x coordinates independently for each track
+    x = np.zeros_like(timestamps, dtype=np.float32)
+    for i in range(num_tracks):
+        track_mask = track_ids == i
+        # Generate random x coordinates in range [-10, 10] and sort them
+        x[track_mask] = np.sort(np.random.uniform(-10, 10, track_lengths[i]))
     
     # Calculate y coordinates using linear equation y = mx + b
     y = np.zeros_like(x, dtype=np.float32)
@@ -189,10 +194,54 @@ def join_overlapping_tracks(df: pl.DataFrame, overlaps: pl.DataFrame):
     
     return result
 
+
+def plot_tracks(df: pl.DataFrame):
+    """
+    Create a 3D plot of the tracks in x,y,time space.
+    
+    Args:
+        df: DataFrame with columns: track_id, x, y, timestamp
+    """
+    # Create figure and 3D axes
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Get unique track IDs
+    track_ids = df["track_id"].unique()
+    
+    # Plot each track with a different color
+    for track_id in track_ids:
+        track_data = df.filter(pl.col("track_id") == track_id)
+        ax.plot(
+            track_data["timestamp"],
+            track_data["x"],
+            track_data["y"],
+            label=f"Track {track_id}",
+            alpha=0.7
+        )
+    
+    # Set labels and title
+    ax.set_xlabel("Time")
+    ax.set_title("Tracks in 3D Space")
+    
+    # Add legend
+    ax.legend(bbox_to_anchor=(1.15, 1), loc='upper left')
+    
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+    
+    # Show the plot
+    plt.show()
+    plt.waitforbuttonpress()
+
 # Generate dataset with overlapping time periods
-df = generate_dataset(100, 15, max_time=100.0)
+df = generate_dataset(15, 10, max_time=20.0)
+# plot_tracks(df)
+
 df = collapse_dataset(df)
 overlaps = find_overlapping_tracks(df)
 overlapping_dataset = join_overlapping_tracks(df, overlaps)
 print("\nOverlapping tracks with their points:")
 print(overlapping_dataset)
+# use the match_nearest_point function on our data
+
