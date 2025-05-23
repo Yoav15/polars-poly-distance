@@ -25,5 +25,5 @@ result = overlapping_tracks.with_columns([
 
 # Print results
 print("\nOverlapping tracks with average distances:")
-print(result.select(["track_id_1", "track_id_2", "avg_distance"]))
-# plot_tracks()
+print(result.select(["track_id_1", "track_id_2", "avg_distance"]).sort('avg_distance'))
+plot_tracks(df)#.filter(pl.col('track_id').is_in([3, 6, 0, 7])))

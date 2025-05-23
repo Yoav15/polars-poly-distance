@@ -1,8 +1,8 @@
 import polars as pl
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import plotly.graph_objects as go
+
 
 def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float = 20.0):
     """
@@ -70,7 +70,7 @@ def collapse_dataset(df: pl.DataFrame):
     Collapse each track into a single row with a list of points,
     with 2 extra columns for each track_id, the start and end timestamp.
     """
-    df = df.group_by("track_id").agg(
+    df = df.group_by("track_id", maintain_order=True).agg(
         pl.col("x").alias("x_list"),
         pl.col("y").alias("y_list"),
         pl.col("timestamp").alias("timestamp_list"),
@@ -158,53 +158,18 @@ def join_overlapping_tracks(df: pl.DataFrame, overlaps: pl.DataFrame):
         right_on="track_id"
     )
     
-    # # Filter points to only those in the overlap period
-    # result = result.with_columns([
-    #     # For track 1
-    #     pl.col("x_list").list.eval(
-    #         pl.element().filter(
-    #             pl.col("timestamp_list").is_between(pl.col("overlap_start"), pl.col("overlap_end"))
-    #         )
-    #     ).alias("x_list_1"),
-    #     pl.col("y_list").list.eval(
-    #         pl.element().filter(
-    #             pl.col("timestamp_list").is_between(pl.col("overlap_start"), pl.col("overlap_end"))
-    #         )
-    #     ).alias("y_list_1"),
-    #     # For track 2
-    #     pl.col("x_list_2").list.eval(
-    #         pl.element().filter(
-    #             pl.col("timestamp_list_2").is_between(pl.col("overlap_start"), pl.col("overlap_end"))
-    #         )
-    #     ).alias("x_list_2"),
-    #     pl.col("y_list_2").list.eval(
-    #         pl.element().filter(
-    #             pl.col("timestamp_list_2").is_between(pl.col("overlap_start"), pl.col("overlap_end"))
-    #         )
-    #     ).alias("y_list_2")
-    # ])
-    
-    # # Select only the columns we want
-    # result = result.select([
-    #     "track_id_1", "track_id_2",
-    #     "x_list_1", "y_list_1",
-    #     "x_list_2", "y_list_2",
-    #     "overlap_start", "overlap_end"
-    # ])
-    
     return result
 
 
 def plot_tracks(df: pl.DataFrame):
     """
-    Create a 3D plot of the tracks in x,y,time space.
+    Create an interactive 3D plot of the tracks in x,y,time space using Plotly.
     
     Args:
         df: DataFrame with columns: track_id, x, y, timestamp
     """
-    # Create figure and 3D axes
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
+    # Create figure
+    fig = go.Figure()
     
     # Get unique track IDs
     track_ids = df["track_id"].unique()
@@ -212,36 +177,50 @@ def plot_tracks(df: pl.DataFrame):
     # Plot each track with a different color
     for track_id in track_ids:
         track_data = df.filter(pl.col("track_id") == track_id)
-        ax.plot(
-            track_data["timestamp"],
-            track_data["x"],
-            track_data["y"],
-            label=f"Track {track_id}",
-            alpha=0.7
+        fig.add_trace(go.Scatter3d(
+            x=track_data["timestamp"],
+            y=track_data["x"],
+            z=track_data["y"],
+            mode='lines',
+            name=f"Track {track_id}",
+            line=dict(width=2),
+            opacity=0.7
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title="Tracks in 3D Space",
+        scene=dict(
+            xaxis_title="Time",
+            yaxis_title="X",
+            zaxis_title="Y"
+        ),
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=1.05
         )
+    )
     
-    # Set labels and title
-    ax.set_xlabel("Time")
-    ax.set_title("Tracks in 3D Space")
-    
-    # Add legend
-    ax.legend(bbox_to_anchor=(1.15, 1), loc='upper left')
-    
-    # Adjust layout to prevent label cutoff
-    plt.tight_layout()
+    # Save as interactive HTML file
+    fig.write_html("tracks_3d.html")
     
     # Show the plot
-    plt.show()
-    plt.waitforbuttonpress()
+    fig.show()
 
-# Generate dataset with overlapping time periods
-df = generate_dataset(15, 10, max_time=20.0)
-# plot_tracks(df)
 
-df = collapse_dataset(df)
-overlaps = find_overlapping_tracks(df)
-overlapping_dataset = join_overlapping_tracks(df, overlaps)
-print("\nOverlapping tracks with their points:")
-print(overlapping_dataset)
-# use the match_nearest_point function on our data
+if __name__ == "__main__":
+    # Generate dataset with overlapping time periods
+    df = generate_dataset(15, 10, max_time=20.0)
+    # plot_tracks(df)
+
+    collapsed_df = collapse_dataset(df)
+    overlaps = find_overlapping_tracks(collapsed_df)
+    overlapping_dataset = join_overlapping_tracks(collapsed_df, overlaps)
+    print("\nOverlapping tracks with their points:")
+    print(overlapping_dataset)
+    plot_tracks(df)
+    # use the match_nearest_point function on our data
 

@@ -79,3 +79,22 @@ print("Tracks | Points/Track | Overlap (s) | Join (s) | Distance (s) | Total (s)
 print("-" * 80)
 for r in results:
     print(f"{r['num_tracks']:6d} | {r['points_per_track']:12d} | {r['overlap_time']:10.3f} | {r['join_time']:8.3f} | {r['distance_time']:10.3f} | {r['total_time']:8.3f} | {r['num_overlaps']:8d}") 
+    
+    
+    
+"""
+for now we get roughly;
+Benchmarking with 100 tracks, 50 points per track:
+Overlap detection: 0.003s
+Track joining: 0.008s
+Distance calculation: 0.246s
+Number of overlapping pairs: 4950
+Total time: 0.256s
+
+Benchmarking with 200 tracks, 50 points per track:
+Overlap detection: 0.002s
+Track joining: 0.030s
+Distance calculation: 0.967s
+Number of overlapping pairs: 19900
+Total time: 0.999s
+"""
