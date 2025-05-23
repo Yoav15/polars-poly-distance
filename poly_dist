@@ -4,9 +4,9 @@ import time
 from pg import match_nearest_point
 
 # effects polars impl more
-num_points = 500
+num_points = 5
 # effects naive impl more
-group_count = 100
+group_count = 10
 
 print(f'df')
 df = pl.DataFrame(
