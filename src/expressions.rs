@@ -9,6 +9,7 @@ use polars::prelude::CompatLevel;
 use rayon::prelude::*;
 use polars::datatypes::Float32Chunked;
 use polars::datatypes::DatetimeChunked;
+use std::collections::HashMap;
 // use std::time::Instant;
 // use flame;
 
@@ -24,18 +25,32 @@ fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
     let t_lists = &inputs[7];
 
     // Pre-compute track data mapping for faster lookups
-    let mut track_data_map: Vec<(i32, Float32Chunked, Float32Chunked, DatetimeChunked)> = Vec::with_capacity(track_ids.len());
-    for i in 0..track_ids.len() {
-        if let Ok(AnyValue::Int32(id)) = track_ids.get(i) {
-            if let (Ok(AnyValue::List(x)), Ok(AnyValue::List(y)), Ok(AnyValue::List(t))) = 
-                (x_lists.get(i), y_lists.get(i), t_lists.get(i)) {
-                if let (Some(x_chunk), Some(y_chunk), Some(t_chunk)) = 
-                    (x.f32().ok(), y.f32().ok(), t.datetime().ok()) {
-                    track_data_map.push((id, x_chunk.clone(), y_chunk.clone(), t_chunk.clone()));
-                }
-            }
-        }
-    }
+    let track_data_map: HashMap<i32, (Float32Chunked, Float32Chunked, DatetimeChunked)> =
+    (0..track_ids.len())
+        .filter_map(|i| {
+            let id = match track_ids.get(i).ok()? {
+                AnyValue::Int32(v) => v,
+                _ => return None,
+            };
+
+            let x = match x_lists.get(i).ok()? {
+                AnyValue::List(s) => s.f32().ok()?.clone(),
+                _ => return None,
+            };
+
+            let y = match y_lists.get(i).ok()? {
+                AnyValue::List(s) => s.f32().ok()?.clone(),
+                _ => return None,
+            };
+
+            let t = match t_lists.get(i).ok()? {
+                AnyValue::List(s) => s.datetime().ok()?.clone(),
+                _ => return None,
+            };
+
+            Some((id, (x, y, t)))
+        })
+        .collect();
 
     let result_vec: Vec<f32> = (0..track_id_1.len()).into_par_iter().map(|row| {
         // Get track IDs and overlap period
@@ -55,26 +70,21 @@ fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
         };
 
         // Find track data using pre-computed map
-        let (x1_vals, y1_vals, t1_vals) = match track_data_map.iter().find(|(id, _, _, _)| *id == id1) {
-            Some((_, x, y, t)) => {
-                match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
-                    (Ok(x), Ok(y), Ok(t)) => (x, y, t),
-                    _ => return 0.0,
-                }
+        let (x1_vals, y1_vals, t1_vals) = match track_data_map.get(&id1) {
+            Some((x, y, t)) => match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
+                (Ok(x), Ok(y), Ok(t)) => (x, y, t),
+                _ => return 0.0,
             },
             None => return 0.0,
         };
 
-        let (x2_vals, y2_vals, t2_vals) = match track_data_map.iter().find(|(id, _, _, _)| *id == id2) {
-            Some((_, x, y, t)) => {
-                match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
-                    (Ok(x), Ok(y), Ok(t)) => (x, y, t),
-                    _ => return 0.0,
-                }
+        let (x2_vals, y2_vals, t2_vals) = match track_data_map.get(&id2) {
+            Some((x, y, t)) => match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
+                (Ok(x), Ok(y), Ok(t)) => (x, y, t),
+                _ => return 0.0,
             },
             None => return 0.0,
         };
-
         // Filter points within overlap period
         let valid_1: Vec<usize> = (0..t1_vals.len())
             .filter(|&i| t1_vals[i] >= start && t1_vals[i] <= end)
