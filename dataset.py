@@ -1,8 +1,8 @@
 import polars as pl
 import numpy as np
 import time
-import plotly.graph_objects as go
 from pg import match_nearest_point
+import plotly.graph_objects as go
 
 
 def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float = 20.0):
@@ -142,9 +142,11 @@ def join_overlapping_tracks(df: pl.DataFrame, overlaps: pl.DataFrame):
         DataFrame with columns: track_id_1, track_id_2, x_list_1, y_list_1, x_list_2, y_list_2
         where x_list_1,y_list_1 are points from track_id_1 and x_list_2,y_list_2 are points from track_id_2
         that occur during the overlap period
+        
+    Note: this will be extremely slow if the overlaps dataframe is extremely dense..
     """
-    # Join overlaps with track 1 points
-    df1 = overlaps.join(
+    # Create a single join operation that combines both track data
+    result = overlaps.join(
         df.select(
             pl.col("track_id"),
             pl.col("x_list"),
@@ -153,10 +155,7 @@ def join_overlapping_tracks(df: pl.DataFrame, overlaps: pl.DataFrame):
         ),
         left_on="track_id_1",
         right_on="track_id"
-    )
-    
-    # Join with track 2 points
-    result = df1.join(
+    ).join(
         df.select(
             pl.col("track_id"),
             pl.col("x_list").alias("x_list_2"),
