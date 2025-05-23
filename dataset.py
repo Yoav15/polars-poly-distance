@@ -1,6 +1,7 @@
 import polars as pl
 import numpy as np
 import time
+from datetime import datetime, timedelta
 from pg import match_nearest_point
 import plotly.graph_objects as go
 
@@ -14,7 +15,7 @@ def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float
     Args:
         num_tracks: Number of unique tracks to generate
         avg_points_per_track: Average number of points per track
-        max_time: Maximum possible start time for tracks
+        max_time: Maximum possible start time for tracks (in minutes)
         
     Returns:
         DataFrame with columns: track_id, x, y, timestamp
@@ -27,21 +28,22 @@ def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float
     # Generate track IDs and timestamps
     track_ids = []
     timestamps = []
+    base_time = datetime.now()
+    
     for i in range(num_tracks):
         track_ids.extend([i] * track_lengths[i])
-        # Generate timestamps with fixed delta of 1
-        track_times = np.arange(track_lengths[i]) + start_times[i]
+        # Generate timestamps with fixed delta of 1 minute
+        track_times = [base_time + timedelta(minutes=start_times[i] + j) for j in range(track_lengths[i])]
         timestamps.extend(track_times)
     
     track_ids = np.array(track_ids)
-    timestamps = np.array(timestamps)
     
     # Generate random slopes and intercepts for each track
     slopes = np.random.uniform(-2, 2, num_tracks)
     intercepts = np.random.uniform(-5, 5, num_tracks)
     
     # Generate x coordinates independently for each track
-    x = np.zeros_like(timestamps, dtype=np.float32)
+    x = np.zeros_like(track_ids, dtype=np.float32)
     for i in range(num_tracks):
         track_mask = track_ids == i
         # Generate random x coordinates in range [-10, 10] and sort them
@@ -68,7 +70,7 @@ def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float
             "track_id": pl.Int32,
             "x": pl.Float32,
             "y": pl.Float32,
-            "timestamp": pl.Float32,
+            "timestamp": pl.Datetime,
         }
         )
     return df
@@ -129,46 +131,6 @@ def find_overlapping_tracks(df: pl.DataFrame):
     return overlaps
 
 
-def join_overlapping_tracks(df: pl.DataFrame, overlaps: pl.DataFrame):
-    """
-    Join the original track data with the overlap information to get the actual points
-    that overlap between tracks.
-    
-    Args:
-        df: Collapsed DataFrame with track points (from collapse_dataset)
-        overlaps: DataFrame with overlap information from find_overlapping_tracks
-        
-    Returns:
-        DataFrame with columns: track_id_1, track_id_2, x_list_1, y_list_1, x_list_2, y_list_2
-        where x_list_1,y_list_1 are points from track_id_1 and x_list_2,y_list_2 are points from track_id_2
-        that occur during the overlap period
-        
-    Note: this will be extremely slow if the overlaps dataframe is extremely dense..
-    """
-    # Create a single join operation that combines both track data
-    result = overlaps.join(
-        df.select(
-            pl.col("track_id"),
-            pl.col("x_list"),
-            pl.col("y_list"),
-            pl.col("timestamp_list")
-        ),
-        left_on="track_id_1",
-        right_on="track_id"
-    ).join(
-        df.select(
-            pl.col("track_id"),
-            pl.col("x_list").alias("x_list_2"),
-            pl.col("y_list").alias("y_list_2"),
-            pl.col("timestamp_list").alias("timestamp_list_2")
-        ),
-        left_on="track_id_2",
-        right_on="track_id"
-    )
-    
-    return result
-
-
 def plot_tracks(df: pl.DataFrame):
     """
     Create an interactive 3D plot of the tracks in x,y,time space using Plotly.
@@ -226,22 +188,31 @@ if __name__ == "__main__":
 
     collapsed_df = collapse_dataset(df)
     overlaps = find_overlapping_tracks(collapsed_df)
-    overlapping_dataset = join_overlapping_tracks(collapsed_df, overlaps)
-    print("\nOverlapping tracks with their points:")
-    print(overlapping_dataset)
-    result = overlapping_dataset.with_columns([
+    track_data = collapsed_df.select(
+        pl.col("track_id"),
+        pl.col("x_list"),
+        pl.col("y_list"),
+        pl.col("timestamp_list")
+    )
+    
+    print("\nOverlapping tracks:")
+    print(overlaps)
+    print("\nTrack data mapping:")
+    print(track_data)
+    
+    # Calculate nearest points between overlapping tracks
+    result = overlaps.with_columns([
         match_nearest_point(
-            pl.col("x_list"),
-            pl.col("y_list"),
-            pl.col("timestamp_list"),
-            pl.col("x_list_2"),
-            pl.col("y_list_2"),
-            pl.col("timestamp_list_2"),
+            pl.col("track_id_1"),
+            pl.col("track_id_2"),
             pl.col("overlap_start"),
-            pl.col("overlap_end")
+            pl.col("overlap_end"),
+            track_data["track_id"],
+            track_data["x_list"],
+            track_data["y_list"],
+            track_data["timestamp_list"]
         ).alias("avg_distance")
     ])
-    result.select(['track_id_1', 'track_id_2', 'avg_distance']).sort('avg_distance')
+    # result['track_id_1', 'track_id_2', 'avg_distance'].sort('avg_distance')
     plot_tracks(df)
-    # use the match_nearest_point function on our data
 

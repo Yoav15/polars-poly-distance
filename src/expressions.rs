@@ -8,62 +8,74 @@ use polars::prelude::PolarsResult;
 use polars::prelude::CompatLevel;
 use rayon::prelude::*;
 use polars::datatypes::Float32Chunked;
+use polars::datatypes::DatetimeChunked;
 // use std::time::Instant;
 // use flame;
 
 #[polars_expr(output_type = Float32)]
 fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
-    // let start_total = Instant::now();
-    let x1 = &inputs[0];
-    let y1 = &inputs[1];
-    let t1 = &inputs[2];
-    let x2 = &inputs[3];
-    let y2 = &inputs[4];
-    let t2 = &inputs[5];
-    let overlap_start = &inputs[6];
-    let overlap_end = &inputs[7];
+    let track_id_1 = &inputs[0];
+    let track_id_2 = &inputs[1];
+    let overlap_start = &inputs[2];
+    let overlap_end = &inputs[3];
+    let track_ids = &inputs[4];
+    let x_lists = &inputs[5];
+    let y_lists = &inputs[6];
+    let t_lists = &inputs[7];
 
-    let result_vec: Vec<f32> = (0..x1.len()).into_par_iter().map(|row| {
-        // let start_row = Instant::now();
-
-        // Unwrap scalar start/end
-        let (start, end) = match (overlap_start.get(row), overlap_end.get(row)) {
-            (Ok(AnyValue::Float32(s)), Ok(AnyValue::Float32(e))) => (s, e),
-            _ => return 0.0,
-        };
-
-        let get_chunk = |series: &Series| -> Option<Float32Chunked> {
-            match series.get(row).ok()? {
-                AnyValue::List(inner) => inner.f32().ok().map(|ca| ca.clone()),
-                _ => None,
+    // Pre-compute track data mapping for faster lookups
+    let mut track_data_map: Vec<(i32, Float32Chunked, Float32Chunked, DatetimeChunked)> = Vec::with_capacity(track_ids.len());
+    for i in 0..track_ids.len() {
+        if let Ok(AnyValue::Int32(id)) = track_ids.get(i) {
+            if let (Ok(AnyValue::List(x)), Ok(AnyValue::List(y)), Ok(AnyValue::List(t))) = 
+                (x_lists.get(i), y_lists.get(i), t_lists.get(i)) {
+                if let (Some(x_chunk), Some(y_chunk), Some(t_chunk)) = 
+                    (x.f32().ok(), y.f32().ok(), t.datetime().ok()) {
+                    track_data_map.push((id, x_chunk.clone(), y_chunk.clone(), t_chunk.clone()));
+                }
             }
-        };
+        }
+    }
 
-        let (x1_chunk, y1_chunk, t1_chunk, x2_chunk, y2_chunk, t2_chunk) = match (
-            get_chunk(x1),
-            get_chunk(y1),
-            get_chunk(t1),
-            get_chunk(x2),
-            get_chunk(y2),
-            get_chunk(t2),
+    let result_vec: Vec<f32> = (0..track_id_1.len()).into_par_iter().map(|row| {
+        // Get track IDs and overlap period
+        let (id1, id2, start, end) = match (
+            track_id_1.get(row),
+            track_id_2.get(row),
+            overlap_start.get(row),
+            overlap_end.get(row)
         ) {
-            (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => (a, b, c, d, e, f),
+            (
+                Ok(AnyValue::Int32(i1)),
+                Ok(AnyValue::Int32(i2)),
+                Ok(AnyValue::Datetime(s, _, _)),
+                Ok(AnyValue::Datetime(e, _, _))
+            ) => (i1, i2, s, e),
             _ => return 0.0,
         };
 
-        let (x1_vals, y1_vals, t1_vals, x2_vals, y2_vals, t2_vals) = match (
-            x1_chunk.cont_slice().ok(),
-            y1_chunk.cont_slice().ok(),
-            t1_chunk.cont_slice().ok(),
-            x2_chunk.cont_slice().ok(),
-            y2_chunk.cont_slice().ok(),
-            t2_chunk.cont_slice().ok(),
-        ) {
-            (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => (a, b, c, d, e, f),
-            _ => return 0.0,
+        // Find track data using pre-computed map
+        let (x1_vals, y1_vals, t1_vals) = match track_data_map.iter().find(|(id, _, _, _)| *id == id1) {
+            Some((_, x, y, t)) => {
+                match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
+                    (Ok(x), Ok(y), Ok(t)) => (x, y, t),
+                    _ => return 0.0,
+                }
+            },
+            None => return 0.0,
         };
 
-        // let start_filter = Instant::now();
+        let (x2_vals, y2_vals, t2_vals) = match track_data_map.iter().find(|(id, _, _, _)| *id == id2) {
+            Some((_, x, y, t)) => {
+                match (x.cont_slice(), y.cont_slice(), t.cont_slice()) {
+                    (Ok(x), Ok(y), Ok(t)) => (x, y, t),
+                    _ => return 0.0,
+                }
+            },
+            None => return 0.0,
+        };
+
+        // Filter points within overlap period
         let valid_1: Vec<usize> = (0..t1_vals.len())
             .filter(|&i| t1_vals[i] >= start && t1_vals[i] <= end)
             .collect();
@@ -71,25 +83,20 @@ fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
         let valid_2: Vec<usize> = (0..t2_vals.len())
             .filter(|&i| t2_vals[i] >= start && t2_vals[i] <= end)
             .collect();
-        // let filter_time = start_filter.elapsed();
 
         if valid_1.is_empty() || valid_2.is_empty() {
             return 0.0;
         }
 
-        // let start_calc = Instant::now();
         let mut total_distance = 0.0f32;
         let mut count = 0;
 
-        for &i in valid_1.iter() {
-            // let start_point = Instant::now();
+        for &i in &valid_1 {
             let t1v = t1_vals[i];
             let x1v = x1_vals[i];
             let y1v = y1_vals[i];
-            // let point_time = start_point.elapsed();
 
-            // Inline binary search for closest t2
-            // let start_search = Instant::now();
+            // Binary search for closest t2
             let mut left = 0;
             let mut right = valid_2.len();
             while left < right {
@@ -113,30 +120,12 @@ fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
                 let d2 = (t1v - t2_vals[after]).abs();
                 if d1 < d2 { before } else { after }
             };
-            // let search_time = start_search.elapsed();
 
-            // let start_dist = Instant::now();
             let dx = x1v - x2_vals[j_closest];
             let dy = y1v - y2_vals[j_closest];
             total_distance += (dx * dx + dy * dy).sqrt();
-            // let dist_time = start_dist.elapsed();
             count += 1;
-
-            // if count % 100 == 0 {
-            //     println!(
-            //         "Point {} timing: get_point={:?}, search={:?}, dist={:?}", 
-            //         count, point_time, search_time, dist_time
-            //     );
-            // }
         }
-
-        // let calc_time = start_calc.elapsed();
-        // let row_time = start_row.elapsed();
-
-        // println!(
-        //     "Row {} timing: filter={:?}, calc={:?}, total={:?}",
-        //     row, filter_time, calc_time, row_time
-        // );
 
         if count > 0 {
             total_distance / count as f32
@@ -144,9 +133,6 @@ fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
             0.0
         }
     }).collect();
-
-    // let total_time = start_total.elapsed();
-    // println!("Total execution time: {:?}", total_time);
 
     Ok(Series::new(PlSmallStr::from_str("result"), result_vec))
 }

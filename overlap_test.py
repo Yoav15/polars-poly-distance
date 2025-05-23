@@ -1,7 +1,7 @@
 import polars as pl
 import numpy as np
 import time
-from dataset import plot_tracks, generate_dataset, collapse_dataset, find_overlapping_tracks, join_overlapping_tracks
+from dataset import plot_tracks, generate_dataset, collapse_dataset, find_overlapping_tracks
 from pg import match_nearest_point
 
 def test_entire_pipeline(num_tracks=100, avg_points_per_track=20, max_time=50):
@@ -10,18 +10,24 @@ def test_entire_pipeline(num_tracks=100, avg_points_per_track=20, max_time=50):
     df = generate_dataset(num_tracks=num_tracks, avg_points_per_track=avg_points_per_track, max_time=max_time)
     collapsed = collapse_dataset(df)
     overlaps = find_overlapping_tracks(collapsed)
-    overlapping_tracks = join_overlapping_tracks(collapsed, overlaps)
+    track_data = collapsed.select(
+        pl.col("track_id"),
+        pl.col("x_list"),
+        pl.col("y_list"),
+        pl.col("timestamp_list")
+    )
+    
     # Calculate nearest points between overlapping tracks
-    result = overlapping_tracks.with_columns([
+    result = overlaps.with_columns([
         match_nearest_point(
-            pl.col("x_list"),
-            pl.col("y_list"),
-            pl.col("timestamp_list"),
-            pl.col("x_list_2"),
-            pl.col("y_list_2"),
-            pl.col("timestamp_list_2"),
+            pl.col("track_id_1"),
+            pl.col("track_id_2"),
             pl.col("overlap_start"),
-            pl.col("overlap_end")
+            pl.col("overlap_end"),
+            track_data["track_id"],
+            track_data["x_list"],
+            track_data["y_list"],
+            track_data["timestamp_list"]
         ).alias("avg_distance")
     ])
     end_time = time.perf_counter()
@@ -32,23 +38,28 @@ def test_batched_pipeline(num_tracks=100, avg_points_per_track=20, max_time=50, 
     # Generate test dataset
     df = generate_dataset(num_tracks=num_tracks, avg_points_per_track=avg_points_per_track, max_time=max_time)
     collapsed = collapse_dataset(df)
+    track_data = collapsed.select(
+        pl.col("track_id"),
+        pl.col("x_list"),
+        pl.col("y_list"),
+        pl.col("timestamp_list")
+    )
     total_time = 0
     
     for batch in collapsed.sort('start_timestamp').iter_slices(n_rows=batch_size):
         batch_start = time.perf_counter()
         overlaps = find_overlapping_tracks(batch)
-        overlapping_tracks = join_overlapping_tracks(batch, overlaps)
         # Calculate nearest points between overlapping tracks
-        result = overlapping_tracks.with_columns([
+        result = overlaps.with_columns([
             match_nearest_point(
-                pl.col("x_list"),
-                pl.col("y_list"),
-                pl.col("timestamp_list"),
-                pl.col("x_list_2"),
-                pl.col("y_list_2"),
-                pl.col("timestamp_list_2"),
+                pl.col("track_id_1"),
+                pl.col("track_id_2"),
                 pl.col("overlap_start"),
-                pl.col("overlap_end")
+                pl.col("overlap_end"),
+                track_data["track_id"],
+                track_data["x_list"],
+                track_data["y_list"],
+                track_data["timestamp_list"]
             ).alias("avg_distance")
         ])
         batch_end = time.perf_counter()
@@ -102,4 +113,5 @@ def run_performance_comparison():
         print(result)
 
 if __name__ == "__main__":
-    run_performance_comparison()
+    # run_performance_comparison()
+    test_entire_pipeline()
