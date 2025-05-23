@@ -2,6 +2,7 @@ import polars as pl
 import numpy as np
 import time
 import plotly.graph_objects as go
+from pg import match_nearest_point
 
 
 def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float = 20.0):
@@ -56,12 +57,20 @@ def generate_dataset(num_tracks: int, avg_points_per_track: int, max_time: float
     noise = np.random.normal(0, 0.5, len(y))
     y += noise
     
-    df = pl.DataFrame({
-        "track_id": track_ids,
-        "x": x,
-        "y": y,
-        "timestamp": timestamps,
-    })
+    df = pl.DataFrame(
+        {
+            "track_id": track_ids,
+            "x": x,
+            "y": y,
+            "timestamp": timestamps,
+        }, 
+        schema={
+            "track_id": pl.Int32,
+            "x": pl.Float32,
+            "y": pl.Float32,
+            "timestamp": pl.Float32,
+        }
+        )
     return df
 
 
@@ -221,6 +230,19 @@ if __name__ == "__main__":
     overlapping_dataset = join_overlapping_tracks(collapsed_df, overlaps)
     print("\nOverlapping tracks with their points:")
     print(overlapping_dataset)
+    result = overlapping_dataset.with_columns([
+        match_nearest_point(
+            pl.col("x_list"),
+            pl.col("y_list"),
+            pl.col("timestamp_list"),
+            pl.col("x_list_2"),
+            pl.col("y_list_2"),
+            pl.col("timestamp_list_2"),
+            pl.col("overlap_start"),
+            pl.col("overlap_end")
+        ).alias("avg_distance")
+    ])
+    result.select(['track_id_1', 'track_id_2', 'avg_distance']).sort('avg_distance')
     plot_tracks(df)
     # use the match_nearest_point function on our data
 
