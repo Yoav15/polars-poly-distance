@@ -2,7 +2,7 @@ import polars as pl
 import numpy as np
 import time
 from dataset import plot_tracks, generate_dataset, collapse_dataset, find_overlapping_tracks
-from pg import match_nearest_point
+from ppd import match_nearest_point
 
 def test_entire_pipeline(num_tracks=100, avg_points_per_track=20, max_time=50):
     start_time = time.perf_counter()
