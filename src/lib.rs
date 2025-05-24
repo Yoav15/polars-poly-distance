@@ -1,4 +1,4 @@
-mod expressions;
+pub mod expressions;
 use pyo3::prelude::*;
 use pyo3_polars::PolarsAllocator;
 
@@ -10,3 +10,6 @@ fn _internal(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
 #[global_allocator]
 static ALLOC: PolarsAllocator = PolarsAllocator::new();
+
+// Re-export for benchmarking
+pub use expressions::match_nearest_point_impl as match_nearest_point;
