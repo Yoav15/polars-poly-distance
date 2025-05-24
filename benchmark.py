@@ -2,7 +2,7 @@ import polars as pl
 import numpy as np
 import time
 from dataset import generate_dataset, collapse_dataset, find_overlapping_tracks
-from ppd import match_nearest_point
+from ppd import poly_dist
 import os
 # os.environ["POLARS_VERBOSE"] = "1"
 
@@ -25,7 +25,7 @@ def run_benchmark(num_tracks, points_per_track, max_time):
     # Time distance calculation
     t0 = time.perf_counter()
     result = overlaps.with_columns([
-        match_nearest_point(
+        poly_dist(
             pl.col("track_id_1"),
             pl.col("track_id_2"),
             pl.col("overlap_start"),

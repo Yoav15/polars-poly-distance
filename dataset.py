@@ -2,7 +2,7 @@ import polars as pl
 import numpy as np
 import time
 from datetime import datetime, timedelta
-from ppd import match_nearest_point
+from ppd import poly_dist
 import plotly.graph_objects as go
 
 
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     
     # Calculate nearest points between overlapping tracks
     result = overlaps.with_columns([
-        match_nearest_point(
+        poly_dist(
             pl.col("track_id_1"),
             pl.col("track_id_2"),
             pl.col("overlap_start"),

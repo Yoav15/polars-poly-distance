@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 LIB = Path(__file__).parent
 
     
-def match_nearest_point(
+def poly_dist(
     track_id_1: IntoExprColumn,
     track_id_2: IntoExprColumn,
     overlap_start: IntoExprColumn,
@@ -43,7 +43,7 @@ def match_nearest_point(
     return register_plugin_function(
         args=[track_id_1, track_id_2, overlap_start, overlap_end, track_ids, x_lists, y_lists, timestamp_lists],
         plugin_path=LIB,
-        function_name="match_nearest_point",
+        function_name="poly_dist",
         is_elementwise=True,
     )
 

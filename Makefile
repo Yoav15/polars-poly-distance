@@ -15,8 +15,8 @@ install-release:
 pre-commit:
 	cargo +nightly fmt --all && cargo clippy --all-features
 	.venv/bin/python -m ruff check . --fix --exit-non-zero-on-fix
-	.venv/bin/python -m ruff format pg tests
-	.venv/bin/mypy pg tests
+	.venv/bin/python -m ruff format ppd tests
+	.venv/bin/mypy ppd tests
 
 test:
 	.venv/bin/python -m pytest tests

@@ -14,7 +14,8 @@ use std::collections::HashMap;
 // use flame;
 
 // The actual implementation
-pub fn match_nearest_point_impl(inputs: &[Series]) -> PolarsResult<Series> {
+#[polars_expr(output_type = Float32)]
+pub fn poly_dist(inputs: &[Series]) -> PolarsResult<Series> {
     let track_id_1 = &inputs[0];
     let track_id_2 = &inputs[1];
     let overlap_start = &inputs[2];
@@ -145,10 +146,4 @@ pub fn match_nearest_point_impl(inputs: &[Series]) -> PolarsResult<Series> {
     }).collect();
 
     Ok(Series::new(PlSmallStr::from_str("result"), result_vec))
-}
-
-// The polars expression wrapper
-#[polars_expr(output_type = Float32)]
-fn match_nearest_point(inputs: &[Series]) -> PolarsResult<Series> {
-    match_nearest_point_impl(inputs)
 }
