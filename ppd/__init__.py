@@ -13,7 +13,30 @@ if TYPE_CHECKING:
 
 LIB = Path(__file__).parent
 
+def mini_rocket_expr(
+    tracks: IntoExprColumn,
+    kernels: IntoExprColumn,
+    dilations: IntoExprColumn,
+    biases: IntoExprColumn,
+) -> pl.Expr:
+    """
+    Calculate the average distance between nearest points in overlapping tracks.
     
+    Args:
+        tracks: Column containing the first track ID
+        kernels: Column containing the second track ID
+        dilations: Column containing the start time of overlap
+        biases: Column containing the end time of overlap
+    Returns:
+    """
+    return register_plugin_function(
+        args=[tracks, kernels, dilations, biases],
+        plugin_path=LIB,
+        function_name="mini_rocket_expr",
+        is_elementwise=True,
+    )
+    
+  
 def poly_dist(
     track_id_1: IntoExprColumn,
     track_id_2: IntoExprColumn,

@@ -213,6 +213,6 @@ if __name__ == "__main__":
             track_data["timestamp_list"]
         ).alias("avg_distance")
     ])
-    # result['track_id_1', 'track_id_2', 'avg_distance'].sort('avg_distance')
-    plot_tracks(df)
+    print(result['track_id_1', 'track_id_2', 'avg_distance'].sort('avg_distance'))
+    # plot_tracks(df)
 
